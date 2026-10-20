@@ -62,7 +62,7 @@ To run *ps5-linux*, you need some required and optional hardwares:
 - **VERY IMPORTANT**: Enable Rest Mode features:
   - Go to `Settings` → `System` → `Power Saving` → `Features Available in Rest Mode` and set `Supply Power to USB Ports` to `Always`.
 - **VERY IMPORTANT**: Disable HDMI Device Link:
-  - Go to `Settings` → `HDMI` → `Enable HDMI Device Link`
+  - Go to `Settings` → `HDMI` → `Disable HDMI Device Link`
 - *Recommended*: Disable automatic updates:
   - Go to `Settings` → `System Software` → `System Software Update and Settings`
 - *Recommended*: Disable automatic error reporting:
