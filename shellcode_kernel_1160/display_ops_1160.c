@@ -84,6 +84,10 @@ const ps5_display_op_1160 ps5_display_ops_1140[29] = {
     {0x00539770, 0, 0, 0}, {0x00539610, 0, 0, 0},
 };
 
+const ps5_display_op_1160 ps5_display_ops_1060[29] = {
+    {0x00308050, 0, 0, 0x0}, {0x003082B0, 0, 0, 0x0}, {0x00308400, 0, 0, 0x0}, {0x003085C0, 0, 0, 0x0}, {0x00BA1DA0, 0, 0, 0x0}, {0x002D8E20, 0, 0, 0x0}, {0x006EEF30, 0, 0, 0x0}, {0x00A8E7A0, 0, 0, 0x0}, {0x004D9860, 0, 0, 0x0}, {0x004D9A40, 0, 0, 0x0}, {0x003083D0, 0, 0, 0x0}, {0x00B13FB0, 0, 0, 0x0}, {0x00B14990, 0, 0, 0x0}, {0x00B14BA0, 0, 0, 0x0}, {0x00B14CF0, 0, 0, 0x0}, {0x002D9E40, 0, 0, 0x0}, {0x002D9E40, 1, 0, 0x0}, {0x002D9E40, 2, 0, 0x0}, {0x002D9E40, 3, 0, 0x0}, {0x003085F0, 0, 0, 0x0}, {0x004D9C10, 0, 0, 0x0}, {0x004D9D90, 0, 0, 0x0}, {0x00B140A0, 0, 0, 0x0}, {0x006F56E0, 0, 0, 0x0}, {0x0096C840, 1, 2, 0x7F0}, {0x004DEB40, 0, 0, 0x0}, {0x004DAA50, 1, 0, 0x0}, {0x004DA4C0, 0, 0, 0x0}, {0x004DA360, 0, 0, 0x0}
+};
+
 typedef uint64_t (*display_op1_fn)(uint32_t);
 typedef uint64_t (*display_op2_fn)(uint32_t, uint64_t);
 
@@ -98,6 +102,7 @@ dispatch_ps5_display_op_1160(uint32_t index) {
   case 0x1100: op = &ps5_display_ops_1100[index]; break;
   case 0x1120: op = &ps5_display_ops_1120[index]; break;
   case 0x1140: op = &ps5_display_ops_1140[index]; break;
+  case 0x1060: op = &ps5_display_ops_1060[index]; break;
   default:     op = &ps5_display_ops_1160[index]; break;
   }
   const uintptr_t target = args.ktext + op->ktext_offset;

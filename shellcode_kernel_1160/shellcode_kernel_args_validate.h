@@ -17,7 +17,8 @@ static inline int shellcode_kernel_va_is_canonical(uint64_t va) {
 static inline int validate_shellcode_kernel_args_1160(
     volatile const shellcode_kernel_args *candidate) {
   if (candidate == NULL ||
-      (candidate->fw_version != 0x1100 &&
+      (candidate->fw_version != 0x1060 &&
+       candidate->fw_version != 0x1100 &&
        candidate->fw_version != 0x1120 &&
        candidate->fw_version != 0x1140 &&
        candidate->fw_version != 0x1160))

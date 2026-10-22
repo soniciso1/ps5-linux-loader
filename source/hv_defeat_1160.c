@@ -23,6 +23,7 @@
  * wake blob from its prepare_resume() alias into the kernel code cave.
  */
 
+#define FW_1060_RAW 0x10600006U
 #define FW_1100_RAW 0x11000043U
 #define FW_1120_RAW 0x11200005U
 #define FW_1140_RAW 0x11400005U
@@ -124,6 +125,7 @@ static int offsets_present(void) {
   uint32_t expected_raw = 0;
 
   switch (fw) {
+  case 0x1060: expected_raw = FW_1060_RAW; break;
   case 0x1100: expected_raw = FW_1100_RAW; break;
   case 0x1120: expected_raw = FW_1120_RAW; break;
   case 0x1140: expected_raw = FW_1140_RAW; break;

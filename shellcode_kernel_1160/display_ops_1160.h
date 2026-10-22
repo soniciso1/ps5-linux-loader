@@ -13,6 +13,7 @@ typedef struct {
 extern const ps5_display_op_1160 ps5_display_ops_1100[29];
 extern const ps5_display_op_1160 ps5_display_ops_1120[29];
 extern const ps5_display_op_1160 ps5_display_ops_1140[29];
+extern const ps5_display_op_1160 ps5_display_ops_1060[29];
 extern const ps5_display_op_1160 ps5_display_ops_1160[29];
 
 void run_ps5_display_ops_1160(void);

@@ -125,6 +125,13 @@ int set_offsets(void) {
     }
     env_offset = off_1160;
     break;
+  case 0x1060:
+    if (kernel_get_fw_version() != 0x10600006U) {
+      notify("Only the retail 10.60 build (0x10600006) is supported\n");
+      return -1;
+    }
+    env_offset = off_1060;
+    break;
   case 0x1300:
     env_offset = off_1300;
     break;

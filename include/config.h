@@ -5,7 +5,8 @@
 
 /* Firmwares that use the 11.x Sonic carrier and hypervisor-defeat path. */
 #define PS5_FW_IS_11XX(fw)                                                     \
-  ((fw) == 0x1100 || (fw) == 0x1120 || (fw) == 0x1140 || (fw) == 0x1160)
+  ((fw) == 0x1060 || (fw) == 0x1100 || (fw) == 0x1120 ||               \
+   (fw) == 0x1140 || (fw) == 0x1160)
 
 // This is used to allocate resources for HV shellcode and Linux boot
 #define cave 0x100000000ULL
