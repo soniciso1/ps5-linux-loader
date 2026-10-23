@@ -121,7 +121,7 @@ int fetch_linux(struct linux_info *info) {
   char bzimage_path[256];
   char initrd_path[256];
 
-  size_t bzimage_size = find_and_get_size_of_file("bzImage", bzimage_path);
+  ssize_t bzimage_size = find_and_get_size_of_file("bzImage", bzimage_path);
   if (bzimage_size < 0) {
     notify("File bzImage not found at default paths - Aborting\n");
     return -1;
@@ -142,9 +142,9 @@ int fetch_linux(struct linux_info *info) {
     return -1;
   }
 
-  size_t initrd_size = find_and_get_size_of_file("initrd.img", initrd_path);
-  if (bzimage_size < 0) {
-    notify("File bzImage not found at default paths - Aborting\n");
+  ssize_t initrd_size = find_and_get_size_of_file("initrd.img", initrd_path);
+  if (initrd_size < 0) {
+    notify("File initrd.img not found at default paths - Aborting\n");
     return -1;
   }
 
