@@ -205,6 +205,24 @@ void boot_linux(void) {
   mp3_req = (int *)(args.linux_info_va + 0x2420);
 #endif
 
+
+#if defined(FW_13XX_PORT) || defined(FW_1160)
+  /* Wait for break_hv (AP payload in HV) to finish disabling NPT before
+   * writing to HV memory.  On 10.60 the direct CALL hook fires early in
+   * acpi_wakeup_machdep, before the AP startup VMMCALL, so APs may still
+   * be running break_hv when we get here.  Spin up to ~500 ms. */
+  if (args.data_cave_va) {
+    volatile uint64_t *oracle_done =
+        (volatile uint64_t *)(args.data_cave_va + 0x440 + 0x18);
+    uint64_t deadline = read_tsc() + 0x5F5E1000ULL;
+    while (*oracle_done != 0x444F4E452D415031ULL && read_tsc() < deadline)
+      __asm__ volatile("pause");
+    if (*oracle_done == 0x444F4E452D415031ULL)
+      printf("break_hv MARK_DONE\n");
+    else
+      printf("break_hv timeout: NPT may be active\n");
+  }
+#endif
   patch_hv();
 
   // Common bootloader code

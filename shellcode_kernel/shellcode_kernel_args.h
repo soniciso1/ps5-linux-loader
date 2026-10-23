@@ -24,6 +24,7 @@ typedef struct {
   uint64_t hv_handle_vmexit_pa;
   uint64_t hv_code_cave_pa;
   uint64_t linux_info_va; // To relocate by kernel shellcode
+  uint64_t data_cave_va;  // ktext + DATA_CAVE, for break_hv completion wait (FW_1160 only)
 } shellcode_kernel_args;
 
 extern shellcode_kernel_args args; // Declared on main.c
