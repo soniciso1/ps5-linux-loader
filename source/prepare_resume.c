@@ -252,7 +252,8 @@ uint64_t prepare_sck_args(void) {
 
   args.iommu_softc = ktext + env_offset.IOMMU_SOFTC;
 
-  args.kernel_uart_override = ktext + env_offset.KERNEL_UART_OVERRIDE;
+  if (env_offset.KERNEL_UART_OVERRIDE)
+    args.kernel_uart_override = ktext + env_offset.KERNEL_UART_OVERRIDE;
   args.kernel_cfi_check = ktext + env_offset.KERNEL_CFI_CHECK;
   args.hv_handle_vmexit_pa = env_offset.HV_HANDLE_VMEXIT_PA;
   args.hv_code_cave_pa = env_offset.HV_CODE_CAVE_PA;
@@ -268,7 +269,6 @@ uint64_t prepare_sck_args(void) {
   args.linux_info_va = linux_i.linux_info;
   if (PS5_FW_IS_11XX(fw) && env_offset.DATA_CAVE)
     args.data_cave_va = ktext + env_offset.DATA_CAVE;
-
   if (PS5_FW_IS_11XX(fw) && validate_shellcode_kernel_args_1160(&args))
     return 0;
 

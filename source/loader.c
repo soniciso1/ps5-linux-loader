@@ -221,6 +221,30 @@ int fetch_linux(struct linux_info *info) {
       munmap(bzimage, ALIGN_UP(bzimage_size, PAGE_SIZE));
       return -1;
     }
+    if (fw == 0x1060) {
+      /* kernel_cave VAs are below the 10.60 DMAP base and only in SYSCORE
+       * page tables.  The kernel shellcode runs under the kernel CR3 and
+       * cannot reach them.  Pre-copy bzImage and initrd to their cave PAs
+       * so the shellcode can access the data via DMAP.  The shellcode's own
+       * copies become self-copies (src == dst) and are harmless. */
+      uint64_t initrd_dest_pa =
+          cave_bzImage + ALIGN_UP((uint64_t)bzimage_size, PAGE_SIZE);
+      kwrite_large(dmap + cave_bzImage, bzimage, (uint64_t)bzimage_size);
+      kwrite_large(dmap + initrd_dest_pa, initrd, (uint64_t)initrd_size);
+
+      /* Alloc one PAGE (16 KB, 16K-aligned) for the linux_info copy plus
+       * the mp3_req/rsp buffers at offsets +0x1000 and +0x2420. */
+      uint64_t info_pa = alloc_page();
+      if (!info_pa)
+        return -1;
+      struct linux_info info_1060 = *info;
+      info_1060.bzimage = dmap + cave_bzImage;
+      info_1060.initrd  = dmap + initrd_dest_pa;
+      kwrite(pa_to_dmap(info_pa), &info_1060, sizeof(struct linux_info));
+
+      /* Redirect linux_info_va to the new kernel-accessible page. */
+      info->linux_info = pa_to_dmap(info_pa);
+    }
     return 0;
   }
 

@@ -91,8 +91,10 @@ void activate_uart(volatile shellcode_kernel_args *args_ptr) {
   *uart_va &= ~0x200;
 #if !defined(FW_1160)
   // 11.60 has no UART override offset.
-  uint32_t *override_char_va = (uint32_t *)args_ptr->kernel_uart_override;
-  *override_char_va = 0x0;
+  if (args_ptr->kernel_uart_override) {
+    uint32_t *override_char_va = (uint32_t *)args_ptr->kernel_uart_override;
+    *override_char_va = 0x0;
+  }
 #endif
 }
 
