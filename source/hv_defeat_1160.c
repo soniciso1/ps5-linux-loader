@@ -120,6 +120,7 @@ static int offsets_present(void) {
       env_offset.FUN_TRANSMITTER_CONTROL,
       env_offset.FUN_MP3_INITIALIZE,
       env_offset.FUN_MP3_INVOKE,
+      env_offset.HV_HANDLE_VMEXIT_PA,
   };
 
   uint32_t expected_raw = 0;
@@ -134,12 +135,8 @@ static int offsets_present(void) {
   }
   if (kernel_get_fw_version() != expected_raw)
     return 0;
-  /* Every 11.x build shares the same hypervisor image and CC cave. */
-  if (env_offset.HV_CODE_CAVE_PA != 0x62806F00ULL ||
-      env_offset.HV_HANDLE_VMEXIT_PA != 0x62847551ULL)
-    return 0;
-  if (env_offset.KERNEL_CODE_CAVE != 0xD2B000ULL ||
-      env_offset.DATA_CAVE != 0x2D02000ULL)
+  /* HV code cave PA is constant across all supported firmwares. */
+  if (env_offset.HV_CODE_CAVE_PA != 0x62806F00ULL)
     return 0;
   for (size_t i = 0; i < sizeof(required) / sizeof(required[0]); i++)
     if (required[i] == 0)
