@@ -27,17 +27,6 @@ int main(void) {
     return -1;
   }
 
-  // Stage S: bare S3 sanity for 10.60. Skip fetch_linux, prepare_resume,
-  // hv_defeat_1160 -- enter rest mode with ZERO kernel-state mutation after
-  // setup_env. If this wake crashes identically, S3 itself is broken on this
-  // unit. If this wake succeeds, prepare_resume mutations drive the crash.
-  if (fw == 0x1060) {
-    notify("Stage S: bare S3 sanity, no mutations. Going to rest in 5s.\n");
-    sleep(5);
-    enter_rest_mode();
-    while (1) sleep(30);
-  }
-
   if (fetch_linux(&linux_i)) {
     notify("Something went wrong while installing linux files.\n");
     return -1;
