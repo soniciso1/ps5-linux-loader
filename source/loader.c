@@ -221,8 +221,8 @@ int fetch_linux(struct linux_info *info) {
       munmap(bzimage, ALIGN_UP(bzimage_size, PAGE_SIZE));
       return -1;
     }
-    if (fw == 0x1060) {
-      /* kernel_cave VAs are below the 10.60 DMAP base and only in SYSCORE
+    if (fw >= 0x0800 && fw < 0x1100) {
+      /* kernel_cave VAs are below the 10.x DMAP base and only in SYSCORE
        * page tables.  The kernel shellcode runs under the kernel CR3 and
        * cannot reach them.  Pre-copy bzImage and initrd to their cave PAs
        * so the shellcode can access the data via DMAP.  The shellcode's own

