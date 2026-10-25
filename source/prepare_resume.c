@@ -206,9 +206,14 @@ int prepare_resume(void **shellcode_kernel, size_t *shellcode_kernel_len) {
   }
 
   uint64_t args_va = prepare_sck_args();
-  if (!args_va ||
-      update_sck_args_ptr((uint64_t)*shellcode_kernel, args_va))
+  if (!args_va) {
+    notify("%04x prepare_sck_args failed (args page/validation)\n", fw);
     return -1;
+  }
+  if (update_sck_args_ptr((uint64_t)*shellcode_kernel, args_va)) {
+    notify("%04x args_ptr marker not found\n", fw);
+    return -1;
+  }
 
   // Install shellcode_kernel in kernel space.
   for (size_t i = 0; i < shellcode_len; i += PAGE_SIZE) {
@@ -218,11 +223,13 @@ int prepare_resume(void **shellcode_kernel, size_t *shellcode_kernel_len) {
 
   if (PS5_FW_IS_11XX(fw) ? remove_xotext_1160(shellcode_len) : remove_xotext()) {
     printf("Error: could not remove xo from text\n");
+    notify("%04x remove_xotext failed\n", fw);
     return -1;
   }
 
   if (kernel_pmap_invalidate_all()) {
     printf("Error: could not invalidate pmap\n");
+    notify("%04x pmap invalidate failed\n", fw);
     return -1;
   }
 
@@ -276,17 +283,21 @@ uint64_t prepare_sck_args(void) {
   args.hv_handle_vmexit_pa = env_offset.HV_HANDLE_VMEXIT_PA;
   args.hv_code_cave_pa = env_offset.HV_CODE_CAVE_PA;
   if (PS5_FW_IS_12XX(fw)) {
-    /* 12.xx keeps the constant region base; Wigglez only shifts Pro on 13.60,
-     * but a Pro 12.xx unit still has the code 8 MiB into the carveout, so use
-     * the same shift the rest of this tree uses. Regular units get a zero. */
-    uint64_t hv_base =
-        HV_BASE_REGULAR +
-        (linux_i.kit_type == KIT_RETAIL_PRO ? HV_CODE_OFFSET_PRO : 0);
-    uint64_t hv_offset = hv_base - HV_BASE_REGULAR;
-    args.hv_handle_vmexit_pa += hv_offset;
-    args.hv_code_cave_pa += hv_offset;
-  } else if ((PS5_FW_IS_11XX(fw) || fw == 0x1320 || fw == 0x1340 ||
-              fw == 0x1342 || fw == 0x1360) &&
+    /* Regular units keep the Wigglez constant. A Pro unit can place the
+     * carveout elsewhere, so derive it exactly as 11.x/13.x do and fall back
+     * to the constant if the EFI record is unavailable. Regular kits take the
+     * same path as before (no shift). */
+    if (linux_i.kit_type == KIT_RETAIL_PRO) {
+      uint64_t region = derive_h();
+      if (!region)
+        region = HV_BASE_REGULAR;
+      uint64_t pro_base = region + HV_CODE_OFFSET_PRO;
+      uint64_t hv_offset = pro_base - HV_BASE_REGULAR;
+      args.hv_handle_vmexit_pa += hv_offset;
+      args.hv_code_cave_pa += hv_offset;
+    }
+  } else if ((PS5_FW_IS_11XX(fw) || fw == 0x1300 || fw == 0x1320 ||
+              fw == 0x1340 || fw == 0x1342 || fw == 0x1360) &&
              linux_i.kit_type == KIT_RETAIL_PRO) {
     uint64_t region = derive_h();
     if (!region) {
@@ -302,16 +313,20 @@ uint64_t prepare_sck_args(void) {
   args.linux_info_va = linux_i.linux_info;
   if (PS5_FW_IS_11XX(fw) && env_offset.DATA_CAVE)
     args.data_cave_va = ktext + env_offset.DATA_CAVE;
-  if (PS5_FW_IS_11XX(fw) && validate_shellcode_kernel_args_1160(&args))
+  if (PS5_FW_IS_11XX(fw) && validate_shellcode_kernel_args_1160(&args)) {
+    notify("%04x args validation failed (pre-copy)\n", fw);
     return 0;
+  }
 
   uint64_t args_pa = alloc_page();
   // Keep the args page off the page under the #SX stack, which the wake stack
   // reaches past 0x1040 bytes. Pages taken here stay allocated.
   while (PS5_FW_IS_11XX(fw) && args_pa && pa_under_sx_stack_1160(args_pa))
     args_pa = alloc_page();
-  if (!args_pa)
+  if (!args_pa) {
+    notify("%04x args page allocation failed\n", fw);
     return 0;
+  }
 
   uint64_t args_cave = pa_to_dmap(args_pa);
   shellcode_kernel_args readback = {0};

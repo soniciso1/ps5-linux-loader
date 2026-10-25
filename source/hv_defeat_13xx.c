@@ -437,7 +437,18 @@ int hv_defeat_13xx(void *shellcode_kernel, size_t shellcode_kernel_len) {
     return -1;
   }
 
-  hv_region = PS5_FW_IS_12XX(fw) ? HV_BASE_REGULAR : derive_h();
+  if (PS5_FW_IS_12XX(fw)) {
+    /* Regular: Wigglez constant. Pro: same derivation as 11.x/13.x, with the
+     * constant as fallback so a failed walk keeps the old behaviour. */
+    hv_region = HV_BASE_REGULAR;
+    if (linux_i.kit_type == KIT_RETAIL_PRO) {
+      uint64_t derived = derive_h();
+      if (derived)
+        hv_region = derived;
+    }
+  } else {
+    hv_region = derive_h();
+  }
   if (!hv_region) {
     if (fw == 0x1360)
       notify("13.60 hypervisor base was not found\n");

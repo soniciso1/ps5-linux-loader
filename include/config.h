@@ -5,12 +5,9 @@
 
 /* Firmwares that use the 11.x Sonic carrier and hypervisor-defeat path. */
 #define PS5_FW_IS_11XX(fw)                                                     \
-  ((fw) == 0x0800 || (fw) == 0x0820 || (fw) == 0x0840 ||                       \
-   (fw) == 0x0860 || (fw) == 0x0900 || (fw) == 0x0920 ||                       \
-   (fw) == 0x0940 || (fw) == 0x0960 || (fw) == 0x1000 ||                       \
-   (fw) == 0x1001 || (fw) == 0x1020 || (fw) == 0x1040 ||                       \
-   (fw) == 0x1060 || (fw) == 0x1100 || (fw) == 0x1120 ||                       \
-   (fw) == 0x1140 || (fw) == 0x1160)
+  ((fw) == 0x1000 || (fw) == 0x1001 || (fw) == 0x1020 || (fw) == 0x1040 ||     \
+   (fw) == 0x1060 || (fw) == 0x1100 || (fw) == 0x1120 || (fw) == 0x1140 ||     \
+   (fw) == 0x1160)
 
 /* Wigglez 12.xx khook engine. 12.20/12.40 share off_1240, 12.60/12.70 share
  * off_1270, exactly as the hardware-tested Wigglez all-12.xx build does. */
