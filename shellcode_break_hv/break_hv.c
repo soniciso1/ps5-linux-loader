@@ -37,8 +37,18 @@ static __attribute__((noinline)) void vmcb_write32(uint64_t p, uint32_t v) {
  * its ASID as the GameOS ASID, and write nothing unless the scan finds exactly
  * one such VMCB and sixteen valid GameOS VMCBs. */
 static void vmcb_disable_np_1160(uint64_t *param) {
-  const uint64_t heap_lo = 0x62A00000ULL;
-  const uint64_t heap_hi = 0x63800000ULL;
+  /* param[3] carries the HV region base: 0x62800000 on retail/devkit,
+   * the EFI-derived base on Pro (0x8E0000000). The regular bounds are
+   * exactly region+0x200000 .. region+0x1000000. */
+  const uint64_t hv_region = param[3] ? param[3] : 0x62800000ULL;
+  /* Loader passes the contiguous mapped run (Viola unpublishes part of the
+   * carveout). Older loaders leave these zero, so the defaults stay. */
+  uint64_t heap_lo = hv_region + 0x200000ULL;
+  uint64_t heap_hi = hv_region + 0x1000000ULL;
+  if (param[8] && param[9] > param[8]) {
+    heap_lo = param[8];
+    heap_hi = param[9];
+  }
   const uint64_t dmap = param[1];
   const uint64_t needle_rip = param[5];
   const uint64_t needle_cr3 = param[6];

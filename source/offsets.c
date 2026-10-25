@@ -1573,6 +1573,7 @@ offset_list off_1200 = {
     .GAD_RET_TRAMP = 0x26EA51,
     .GAD_DBREG_RESUME = 0x2ACB78,
     .NVS_SIGNATURE = 0x1A8A900,
+    .HV_EFI_MAP_ROOT = 0x3E0D070,
 };
 
 /* off_1202: generated from the Wigglez 12xx AIO build. */
@@ -1630,6 +1631,7 @@ offset_list off_1202 = {
     .GAD_RET_TRAMP = 0x26EA51,
     .GAD_DBREG_RESUME = 0x2ACB78,
     .NVS_SIGNATURE = 0x1A8A900,
+    .HV_EFI_MAP_ROOT = 0x3E0D070,
 };
 
 /* off_1240: generated from the Wigglez 12xx AIO build. */
@@ -1687,6 +1689,7 @@ offset_list off_1240 = {
     .GAD_RET_TRAMP = 0x26E8D1,
     .GAD_DBREG_RESUME = 0x2AC9F8,
     .NVS_SIGNATURE = 0x1A8A900,
+    .HV_EFI_MAP_ROOT = 0x3E0D070,
 };
 
 /* off_1270: generated from the Wigglez 12xx AIO build. */
@@ -1744,6 +1747,7 @@ offset_list off_1270 = {
     .GAD_RET_TRAMP = 0x26E8D1,
     .GAD_DBREG_RESUME = 0x2AC9F8,
     .NVS_SIGNATURE = 0x1A8A900,
+    .HV_EFI_MAP_ROOT = 0x3E0D070,
 };
 
 offset_list off_1300 = {

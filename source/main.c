@@ -7,6 +7,10 @@
 #include "loader.h"
 #include "prepare_resume.h"
 #include "utils.h"
+#include <fcntl.h>
+#include <pthread.h>
+#include <sys/stat.h>
+#include <stdio.h>
 #include <unistd.h>
 
 // 11.60 keeps page tables from this process linked into PID 1 once the Linux
@@ -20,7 +24,60 @@ static int fail_after_staging(void) {
   return -1;
 }
 
+
+/* ---- stdout tee: every printf/notify line also lands in /data ---------- */
+struct tee_args { int rd, out, log; };
+static struct tee_args g_tee;
+
+static void *tee_main(void *arg) {
+  struct tee_args *a = (struct tee_args *)arg;
+  char buf[4096];
+  ssize_t n;
+  unsigned long long total = 0;
+  while ((n = read(a->rd, buf, sizeof(buf))) > 0) {
+    if (write(a->out, buf, (size_t)n) < 0) { /* keep draining */ }
+    if (a->log >= 0) {
+      if (write(a->log, buf, (size_t)n) > 0) {
+        total += (unsigned long long)n;
+        if (total >= 0x1000) {
+          fsync(a->log);
+          total = 0;
+        }
+      }
+    }
+  }
+  return NULL;
+}
+
+static void log_tee_start(void) {
+  int log, saved, p[2];
+  mkdir("/data/linuxdebug", 0777);
+  log = open("/data/linuxdebug/loader.log",
+             O_WRONLY | O_CREAT | O_TRUNC, 0666);
+  saved = dup(1);
+  if (log < 0 || saved < 0 || pipe(p)) {
+    if (log >= 0) close(log);
+    if (saved >= 0) close(saved);
+    return;
+  }
+  if (dup2(p[1], 1) < 0) {
+    close(p[0]); close(p[1]); close(log); close(saved);
+    return;
+  }
+  close(p[1]);
+  setvbuf(stdout, NULL, _IONBF, 0);
+  g_tee.rd = p[0];
+  g_tee.out = saved;
+  g_tee.log = log;
+  pthread_t t;
+  if (pthread_create(&t, NULL, tee_main, &g_tee)) {
+    dup2(saved, 1);
+    close(p[0]); close(log); close(saved);
+  }
+}
+
 int main(void) {
+  log_tee_start();
   if (setup_env()) {
     notify("Something went wrong while initiating.\nPlease make sure your fw "
            "is supported.");
