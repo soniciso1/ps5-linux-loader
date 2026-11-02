@@ -26,13 +26,10 @@ Features:
 - **7.00**, **7.01**, **7.20**, **7.40**, **7.60**, **7.61** with M.2 support
 - **10.00**, **10.01**, **10.20**, **10.40**, **10.60** with M.2 support
 - **11.00**, **11.20**, **11.40**, **11.60** (the kernel needs KASLR, so do not pass `nokaslr`, `mem=` or `memmap=`)
-- **12.00**, **12.02**, **12.20**, **12.40**, **12.60**, **12.70** with M.2 support
 - **13.00**, **13.20**, **13.40**, **13.42**, **13.60** with M.2 support
 
 **PS5 Pro:**
-- **11.00**, **11.20**, **11.40**, **11.60** with M.2 support
-- **12.00**, **12.02**, **12.20**, **12.40**, **12.60**, **12.70** with M.2 support
-- **13.20**, **13.40**, **13.42**, **13.60** with M.2 support
+- **13.60** with M.2 support
 
 Support for 1.xx and 2.xx firmwares may be added in the future, but we will not prioritize this effort.
 

@@ -50,8 +50,7 @@ typedef struct _offset_list {
   /* Wifi FW */
   uint64_t PS5_WIFI_FW_OFFSET;
   uint64_t PS5_WIFI_FW_SIZE;
-  /* PS5 Pro GPU FW */
-  uint64_t PS5_PRO_GPU_FW_OFFSET;
+
   uint64_t HV_MP_STARTUP_CALL;
   uint64_t MP_STARTUP_INIT_VECTOR;
   uint64_t DATA_CAVE;
@@ -75,8 +74,8 @@ typedef struct _offset_list {
   uint64_t HV_EFI_MAP_ROOT;
 } offset_list;
 
-_Static_assert(sizeof(offset_list) == 0x1E8,
-               "offset_list must match the 13.60 61-qword table");
+_Static_assert(sizeof(offset_list) == 0x1E0,
+               "offset_list must match the 13.60 60-qword table");
 
 extern offset_list off_0300;
 extern offset_list off_0310;
