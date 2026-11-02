@@ -5,6 +5,7 @@
 #include "loader_staging_1160.h"
 #include "utils.h"
 #include <fcntl.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -165,20 +166,28 @@ int fetch_linux(struct linux_info *info) {
     return -1;
   }
 
-  void *bzimage =
-      mmap(NULL, ALIGN_UP(bzimage_size, PAGE_SIZE), PROT_READ | PROT_WRITE,
-           MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  /* A valid file can still report st_size == 0 through some USB bridges/FAT
+   * paths; fall back to read-until-EOF and take the real length from read(). */
+  size_t bzimage_map = bzimage_size ? ALIGN_UP((size_t)bzimage_size, PAGE_SIZE)
+                                    : (64u << 20);
+  void *bzimage = mmap(NULL, bzimage_map, PROT_READ | PROT_WRITE,
+                       MAP_SHARED | MAP_ANONYMOUS, -1, 0);
   if (bzimage == MAP_FAILED) {
-    notify("[-] Error could not allocate bzimage.\n");
+    int e = errno;
+    notify("[-] Error could not allocate bzimage (%d bytes, errno %d).\n",
+           (int)bzimage_map, e);
     return -1;
   }
 
-  bzimage_size =
-      read_file(bzimage_path, bzimage, ALIGN_UP(bzimage_size, PAGE_SIZE));
-  if (bzimage_size < 0) {
+  int bzimage_got = read_file_until_eof(bzimage_path, bzimage, bzimage_map);
+  if (bzimage_got <= 0) {
     notify("Something went wrong while reading bzImage - Aborting\n");
     return -1;
   }
+  if (bzimage_size == 0)
+    notify("[*] bzImage stat size was 0; read %d bytes until EOF.\n",
+           bzimage_got);
+  bzimage_size = bzimage_got;
 
   ssize_t initrd_size = find_and_get_size_of_file("initrd.img", initrd_path);
   if (initrd_size < 0) {
@@ -186,20 +195,26 @@ int fetch_linux(struct linux_info *info) {
     return -1;
   }
 
-  void *initrd =
-      mmap(NULL, ALIGN_UP(initrd_size, PAGE_SIZE), PROT_READ | PROT_WRITE,
-           MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  size_t initrd_map = initrd_size ? ALIGN_UP((size_t)initrd_size, PAGE_SIZE)
+                                  : (512u << 20);
+  void *initrd = mmap(NULL, initrd_map, PROT_READ | PROT_WRITE,
+                      MAP_SHARED | MAP_ANONYMOUS, -1, 0);
   if (initrd == MAP_FAILED) {
-    notify("[-] Error could not allocate initrd.\n");
+    int e = errno;
+    notify("[-] Error could not allocate initrd (%d bytes, errno %d).\n",
+           (int)initrd_map, e);
     return -1;
   }
 
-  initrd_size =
-      read_file(initrd_path, initrd, ALIGN_UP(initrd_size, PAGE_SIZE));
-  if (initrd_size < 0) {
+  int initrd_got = read_file_until_eof(initrd_path, initrd, initrd_map);
+  if (initrd_got <= 0) {
     notify("Something went wrong while reading initrd - Aborting\n");
     return -1;
   }
+  if (initrd_size == 0)
+    notify("[*] initrd stat size was 0; read %d bytes until EOF.\n",
+           initrd_got);
+  initrd_size = initrd_got;
 
   if (dump_device_firmwares(initrd_path) < 0) {
     notify(
@@ -259,30 +274,32 @@ int fetch_linux(struct linux_info *info) {
       munmap(bzimage, ALIGN_UP(bzimage_size, PAGE_SIZE));
       return -1;
     }
-    if (fw >= 0x0800 && fw < 0x1100) {
-      /* kernel_cave VAs are below the 10.x DMAP base and only in SYSCORE
-       * page tables.  The kernel shellcode runs under the kernel CR3 and
-       * cannot reach them.  Pre-copy bzImage and initrd to their cave PAs
-       * so the shellcode can access the data via DMAP.  The shellcode's own
-       * copies become self-copies (src == dst) and are harmless. */
-      uint64_t initrd_dest_pa =
-          cave_bzImage + ALIGN_UP((uint64_t)bzimage_size, PAGE_SIZE);
-      kwrite_large(dmap + cave_bzImage, bzimage, (uint64_t)bzimage_size);
-      kwrite_large(dmap + initrd_dest_pa, initrd, (uint64_t)initrd_size);
+    return 0;
+  }
 
-      /* Alloc one PAGE (16 KB, 16K-aligned) for the linux_info copy plus
-       * the mp3_req/rsp buffers at offsets +0x1000 and +0x2420. */
-      uint64_t info_pa = alloc_page();
-      if (!info_pa)
-        return -1;
-      struct linux_info info_1060 = *info;
-      info_1060.bzimage = dmap + cave_bzImage;
-      info_1060.initrd  = dmap + initrd_dest_pa;
-      kwrite(pa_to_dmap(info_pa), &info_1060, sizeof(struct linux_info));
+  if (fw >= 0x0800 && fw < 0x1000) {
+    /* kernel_cave VAs are below the 10.x DMAP base and only in SYSCORE
+     * page tables.  The kernel shellcode runs under the kernel CR3 and
+     * cannot reach them.  Pre-copy bzImage and initrd to their cave PAs
+     * so the shellcode can access the data via DMAP.  The shellcode's own
+     * copies become self-copies (src == dst) and are harmless. */
+    uint64_t initrd_dest_pa =
+        cave_bzImage + ALIGN_UP((uint64_t)bzimage_size, PAGE_SIZE);
+    kwrite_large(dmap + cave_bzImage, bzimage, (uint64_t)bzimage_size);
+    kwrite_large(dmap + initrd_dest_pa, initrd, (uint64_t)initrd_size);
 
-      /* Redirect linux_info_va to the new kernel-accessible page. */
-      info->linux_info = pa_to_dmap(info_pa);
-    }
+    /* Alloc one PAGE (16 KB, 16K-aligned) for the linux_info copy plus
+     * the mp3_req/rsp buffers at offsets +0x1000 and +0x2420. */
+    uint64_t info_pa = alloc_page();
+    if (!info_pa)
+      return -1;
+    struct linux_info info_1060 = *info;
+    info_1060.bzimage = dmap + cave_bzImage;
+    info_1060.initrd = dmap + initrd_dest_pa;
+    kwrite(pa_to_dmap(info_pa), &info_1060, sizeof(struct linux_info));
+
+    /* Redirect linux_info_va to the new kernel-accessible page. */
+    info->linux_info = pa_to_dmap(info_pa);
     return 0;
   }
 
