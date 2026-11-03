@@ -808,6 +808,9 @@ offset_list off_1100 = {
     .HV_EFI_MAP_ROOT = 0x3DCD0C8,
     .PS5_WIFI_FW_OFFSET = 0x1586110,
     .PS5_WIFI_FW_SIZE = 0x799BC,
+    /* Pro GPU table: derived from retail 16 GB images. PS5 Pro is 16 GB
+     * retail only; never substitute devkit (32 GB) values here. */
+    .PS5_PRO_GPU_FW_OFFSET = 0x257F4D0,
 };
 
 offset_list off_1120 = {
@@ -852,6 +855,7 @@ offset_list off_1120 = {
     .HV_EFI_MAP_ROOT = 0x3DCD0C8,
     .PS5_WIFI_FW_OFFSET = 0x1586110,
     .PS5_WIFI_FW_SIZE = 0x799BC,
+    .PS5_PRO_GPU_FW_OFFSET = 0x257F4D0,
 };
 
 offset_list off_1140 = {
@@ -896,6 +900,7 @@ offset_list off_1140 = {
     .HV_EFI_MAP_ROOT = 0x3DCD0C8,
     .PS5_WIFI_FW_OFFSET = 0x15860D0,
     .PS5_WIFI_FW_SIZE = 0x799BC,
+    .PS5_PRO_GPU_FW_OFFSET = 0x257F4F0,
 };
 
 offset_list off_1160 = {
@@ -943,6 +948,7 @@ offset_list off_1160 = {
     .GAD_DBREG_RESUME = 0x2A5778,
     .NVS_SIGNATURE = 0x1A73930,
     .HV_EFI_MAP_ROOT = 0x3DCD0C8,
+    .PS5_PRO_GPU_FW_OFFSET = 0x257F550,
 };
 
 offset_list off_0800 = {
@@ -1574,6 +1580,7 @@ offset_list off_1200 = {
     .GAD_DBREG_RESUME = 0x2ACB78,
     .NVS_SIGNATURE = 0x1A8A900,
     .HV_EFI_MAP_ROOT = 0x3E0D070,
+    .PS5_PRO_GPU_FW_OFFSET = 0x25A0AA0,
 };
 
 /* off_1202: generated from the Wigglez 12xx AIO build. */
@@ -1632,6 +1639,7 @@ offset_list off_1202 = {
     .GAD_DBREG_RESUME = 0x2ACB78,
     .NVS_SIGNATURE = 0x1A8A900,
     .HV_EFI_MAP_ROOT = 0x3E0D070,
+    .PS5_PRO_GPU_FW_OFFSET = 0x25A0AA0,
 };
 
 /* off_1240: generated from the Wigglez 12xx AIO build. */
@@ -1690,6 +1698,7 @@ offset_list off_1240 = {
     .GAD_DBREG_RESUME = 0x2AC9F8,
     .NVS_SIGNATURE = 0x1A8A900,
     .HV_EFI_MAP_ROOT = 0x3E0D070,
+    .PS5_PRO_GPU_FW_OFFSET = 0x25A0AA0,
 };
 
 /* off_1270: generated from the Wigglez 12xx AIO build. */
@@ -1748,6 +1757,7 @@ offset_list off_1270 = {
     .GAD_DBREG_RESUME = 0x2AC9F8,
     .NVS_SIGNATURE = 0x1A8A900,
     .HV_EFI_MAP_ROOT = 0x3E0D070,
+    .PS5_PRO_GPU_FW_OFFSET = 0x25A0AA0,
 };
 
 offset_list off_1300 = {
@@ -1917,6 +1927,7 @@ offset_list off_1340 = {
     .FUN_PRINTF = 0x25D3F0,
     .FUN_SMP_NO_RENDEVOUS_BARRIER = 0x261F38,
     .MP_STARTUP_INIT_VECTOR = 0x268D08,
+    .PS5_PRO_GPU_FW_OFFSET = 0x25143D0,
 };
 
 offset_list off_1342 = {
@@ -1973,6 +1984,7 @@ offset_list off_1342 = {
     .FUN_PRINTF = 0x25D360,
     .FUN_SMP_NO_RENDEVOUS_BARRIER = 0x263AC8,
     .MP_STARTUP_INIT_VECTOR = 0x2687D8,
+    .PS5_PRO_GPU_FW_OFFSET = 0x25143D0,
 };
 
 offset_list off_1360 = {
