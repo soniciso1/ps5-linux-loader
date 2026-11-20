@@ -32,7 +32,8 @@ Features:
 **PS5 Pro:**
 - **11.00**, **11.20**, **11.40**, **11.60** with M.2 support
 - **12.00**, **12.02**, **12.20**, **12.40**, **12.60**, **12.70** with M.2 support
-- **13.20**, **13.40**, **13.42**, **13.60** with M.2 support
+- **13.00**, **13.20**, **13.40**, **13.42**, **13.60** with M.2 support
+- **13.00**, **13.20**, **13.60** with "viola" GPU uCode support
 
 Support for 1.xx and 2.xx firmwares may be added in the future, but we will not prioritize this effort.
 
@@ -252,6 +253,18 @@ sudo ./m2_exec.sh
 Then follow the same instructions again as the previous section.
 
 In order to always boot Linux from your M.2, you can edit the label at `/boot/efi/cmdline.txt` from `root=LABEL=ubuntu2604` to `root=LABEL=ubuntu2604-m2`. You will still require a USB drive with the FAT32, but you can reformat the ext4 partition.
+
+## Bluetooth pairing sync
+
+The loader exports active PS5 OS classic Bluetooth pairings on each boot for
+BlueZ to import before starting Bluetooth. No marker or Linux setup is required
+for export. Install the [Linux importer](https://github.com/ps5-linux/ps5-linux-patches/tree/main/bluetooth)
+and point it at the directory containing the initrd selected by the loader.
+
+The handoff `ps5-bt-sync.json` contains pairing keys and is deleted by the importer.
+Without an importer, it remains on the boot partition.
+Keep devices paired in PS5 OS. The registry layout was tested on firmware 13.60
+with DualSense and DualSense Edge; unsupported LE records are skipped.
 
 ## Fan & boost control
 
