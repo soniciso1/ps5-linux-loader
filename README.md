@@ -154,6 +154,8 @@ cd ps5-linux-loader
 make
 ```
 
+Use the toolchain the SDK asks for: clang 18 and lld 18 (Ubuntu 24.04: `apt install clang-18 lld-18 llvm-18 gcc make xxd`, with `/usr/lib/llvm-18/bin` first in `PATH`). Build with `make -j1` from a clean tree, because the shellcode headers are generated during the build and a parallel build can compile before they exist. With SDK v0.45 this reproduces the v2026.11.03 release byte for byte. A build with clang 23 and SDK v0.50 compiled fine but stopped before rest mode on a PS5 Pro.
+
 Send the payload with your `$PS5IP` (shown on the page):
 
 ```bash
