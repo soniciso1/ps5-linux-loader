@@ -949,7 +949,6 @@ offset_list off_1160 = {
     .GAD_DBREG_RESUME = 0x2A5778,
     .NVS_SIGNATURE = 0x1A73930,
     .HV_EFI_MAP_ROOT = 0x3DCD0C8,
-    .PS5_PRO_GPU_FW_OFFSET = 0x257F550,
 };
 
 offset_list off_0800 = {
